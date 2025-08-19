@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 from typing import Sequence
 
 from importlib.metadata import PackageNotFoundError, version
@@ -19,14 +20,21 @@ def build_parser() -> argparse.ArgumentParser:
         prog="anon-to-zenodo",
         description="Zip directory and upload to Zenodo using existing credentials.",
     )
-    parser.add_argument("--title", required=True, help="Title for deposition")
-    parser.add_argument("--description", required=True, help="Description / abstract")
+    # Title default is resolved dynamically after parsing based on the directory name
+    parser.add_argument(
+        "--title",
+        help="Title for deposition (default: directory name)",
+    )
+    # Description default fixed string per user requirement
+    parser.add_argument(
+        "--description",
+        help="Description / abstract (default: 'automatic anonymization and uplaod to zenodo')",
+    )
     parser.add_argument(
         "--creator",
         dest="creators",
         action="append",
-        required=True,
-        help="Repeatable: creator 'Family, Given'",
+        help="Repeatable: creator 'Family, Given' (default: 'Authors, Anonymous')",
     )
     parser.add_argument(
         "--sandbox",
@@ -34,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Use Zenodo sandbox (https://sandbox.zenodo.org)",
     )
     parser.add_argument(
-        "--no-publish",
+        "--publish",
         action="store_true",
         help="Create draft but do not publish",
     )
@@ -70,6 +78,16 @@ def run(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    # Apply dynamic defaults if not provided
+    if not args.title:
+        # Derive from target directory (can be provided via --dir); fallback to cwd name
+        target_dir = getattr(args, "directory", ".") or "."
+        args.title = Path(target_dir).resolve().name
+    if not args.description:
+        args.description = "automatic anonymization and uplaod to zenodo"
+    if not args.creators:
+        args.creators = ["Authors, Anonymous"]
+
     # Lazy import so --help / --version work without optional runtime deps installed yet
     try:
         if __package__:
@@ -85,7 +103,7 @@ def run(argv: Sequence[str] | None = None) -> int:
         creators=args.creators,
         sandbox=args.sandbox,
         directory=args.directory,
-        publish=not args.no_publish,
+        publish=args.publish,
         license=args.license,
     )
     if args.json_out:
