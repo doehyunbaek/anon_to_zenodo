@@ -23,11 +23,12 @@ from zenodo_client import Creator, Metadata, Zenodo
 
 DEFAULT_IGNORE = {
     ".git",
-    "__pycache__",
+    ".venv",
     ".mypy_cache",
     ".ruff_cache",
     ".pytest_cache",
     ".DS_Store",
+    "__pycache__",
     "build",
     "dist",
     "htmlcov",
