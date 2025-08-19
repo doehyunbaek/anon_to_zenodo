@@ -37,4 +37,4 @@ Exit status 0 indicates success; non-zero indicates a failure before uploading.
 
 License
 -------
-SPDX-License-Identifier: CC0-1.0
+SPDX-License-Identifier: MIT

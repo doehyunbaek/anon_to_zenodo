@@ -17,11 +17,13 @@ import io
 import os
 import zipfile
 import tempfile
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
 
 from zenodo_client import Creator, Metadata, Zenodo
+import pystow
 
 DEFAULT_IGNORE = {
     ".git",
@@ -71,9 +73,7 @@ def zip_directory(
     else:
         archive_path = Path(output).resolve()
 
-    print(
-        "Creating archive %s from %s (ignoring: %s)", archive_path, root, ", ".join(sorted(ignore_names)) or "<none>"
-    )
+    print("Creating archive %s from %s (ignoring: %s)", archive_path, root, ", ".join(sorted(ignore_names)) or "<none>")
     with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for file_path in _iter_paths(root, ignore_names):
             # Avoid including the archive inside itself if user chose a path inside root
@@ -104,7 +104,7 @@ def upload_cwd(
     sandbox: bool = False,
     directory: str | os.PathLike[str] = ".",
     publish: bool = True,
-    license: str | None = "CC0-1.0",
+    license: str | None = "MIT",
 ) -> UploadResult:
     """Zip the target directory and upload to Zenodo.
 
@@ -118,6 +118,15 @@ def upload_cwd(
     :returns: UploadResult with deposition id, response JSON and path to created archive.
     """
     archive = zip_directory(directory)
+
+    def _slugify(text: str) -> str:
+        # Lowercase, replace non-alphanumeric with hyphens, collapse repeats, strip edges
+        return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", text.lower())).strip("-") or "untitled"
+
+    slug = _slugify(title)
+    config_module = "anon_to_zenodo"  # namespace for storing title->deposition mapping
+
+    existing_id = pystow.get_config(config_module, slug)
     md_creators = [Creator(name=name) for name in creators]
     metadata = Metadata(
         title=title,
@@ -127,5 +136,23 @@ def upload_cwd(
         license=license,
     )
     zen = Zenodo(sandbox=sandbox)
-    res = zen.create(data=metadata, paths=[archive], publish=publish)
+    if existing_id:
+        print(f"Reusing existing deposition {existing_id} for title '{title}' (slug={slug})")
+        # Ensure previous deposition is published so Zenodo creates a *new version* instead of
+        # accumulating multiple files in an unpublished draft. If user requested draft (publish=False),
+        # we just update the existing draft.
+        if publish:
+            try:
+                dep_json = zen._get_deposition(existing_id).json()  # type: ignore[attr-defined]
+                if not dep_json.get("submitted"):
+                    print(f"Existing deposition {existing_id} not published yet; publishing to enable versioning")
+                    zen.publish(existing_id)
+            except Exception as e:  # pragma: no cover - best effort
+                print(f"Warning: could not verify/publish existing deposition {existing_id}: {e}")
+        res = zen.update(existing_id, paths=[archive], publish=publish)
+    else:
+        print(f"Creating new deposition for title '{title}' (slug={slug})")
+        res = zen.create(data=metadata, paths=[archive], publish=publish)
+        # Store mapping for future versioning
+        pystow.write_config(config_module, slug, str(res.json()["id"]))
     return UploadResult(deposition_id=str(res.json()["id"]), response_json=res.json(), archive_path=archive)

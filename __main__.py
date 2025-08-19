@@ -54,7 +54,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--license",
-        default="CC0-1.0",
+    default="MIT",
         help="SPDX license identifier (default: %(default)s)",
     )
     parser.add_argument(
